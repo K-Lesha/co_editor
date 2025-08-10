@@ -239,60 +239,63 @@
     ovSlidesEl.querySelectorAll(".slide").forEach(initDrag);
   }
 
-  function makeSlideRow(slide){
-    const row = document.createElement("div");
-    row.className = "slide";
-    row.setAttribute("draggable","true");
+ function makeSlideRow(slide){
+  const row = document.createElement("div");
+  row.className = "slide";
+  // убрали row.setAttribute("draggable", "true");
 
-    // нормализуем и сохраняем выбранный шаблон
-    row.dataset.templateId = slide.template_id ? String(slide.template_id) : "";
+  row.dataset.templateId = slide.template_id ? String(slide.template_id) : "";
 
-    const selectHtml = `<select class="templSel">
-      <option value="">— выбрать шаблон —</option>
-      ${templates.map(t => `
-        <option value="${escapeAttr(String(t.id))}"${
-          String(t.id) === String(slide.template_id) ? ' selected' : ''
-        }>${escapeHtml(t.name || String(t.id))}</option>
-      `).join("")}
-    </select>`;
+  const selectHtml = `<select class="templSel">
+    <option value="">— выбрать шаблон —</option>
+    ${templates.map(t => `
+      <option value="${escapeAttr(String(t.id))}"${
+        String(t.id) === String(slide.template_id) ? ' selected' : ''
+      }>${escapeHtml(t.name || String(t.id))}</option>
+    `).join("")}
+  </select>`;
 
-    row.innerHTML = `
-      <div class="drag" title="Перетащить" aria-label="drag">≡</div>
-      <div>
-        <div class="num">Слайд</div>
-        <div class="num"><span class="numVal">${slide.slide}</span></div>
-        <div class="num" style="margin-top:8px">Тип</div>
-        <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
-        <div class="num" style="margin-top:8px">Шаблон</div>
-        ${selectHtml}
-      </div>
-      <div>
-        <div class="num">Текст</div>
-        <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
-      </div>
-      <div>
-        <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
-        <div class="previewCard"><div class="previewInner"></div></div>
-      </div>
-      <div class="delBtn">
-        <button class="danger">Удалить</button>
-      </div>
-    `;
+  row.innerHTML = `
+    <div class="drag" title="Перетащить" aria-label="drag">≡</div>
+    <div>
+      <div class="num">Слайд</div>
+      <div class="num"><span class="numVal">${slide.slide}</span></div>
+      <div class="num" style="margin-top:8px">Тип</div>
+      <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
+      <div class="num" style="margin-top:8px">Шаблон</div>
+      ${selectHtml}
+    </div>
+    <div>
+      <div class="num">Текст</div>
+      <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
+    </div>
+    <div>
+      <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
+      <div class="previewCard"><div class="previewInner"></div></div>
+    </div>
+    <div class="delBtn">
+      <button class="danger">Удалить</button>
+    </div>
+  `;
 
-    // События правок → dirty
-    row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); setDirty(true); });
-    const templSel = row.querySelector(".templSel");
-    templSel.addEventListener("change", () => {
-      row.dataset.templateId = templSel.value || "";
-      renderPreview(row);
-      setDirty(true);
-    });
-    row.querySelector(".typeIn").addEventListener("input", () => setDirty(true));
-    row.querySelector(".textIn").addEventListener("input", () => setDirty(true));
+  // делаем draggable только иконку
+  const dragHandle = row.querySelector(".drag");
+  dragHandle.setAttribute("draggable", "true");
 
+  // остальное — твои обработчики
+  row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); setDirty(true); });
+  const templSel = row.querySelector(".templSel");
+  templSel.addEventListener("change", () => {
+    row.dataset.templateId = templSel.value || "";
     renderPreview(row);
-    return row;
-  }
+    setDirty(true);
+  });
+  row.querySelector(".typeIn").addEventListener("input", () => setDirty(true));
+  row.querySelector(".textIn").addEventListener("input", () => setDirty(true));
+
+  renderPreview(row);
+  return row;
+}
 
   function renderPreview(row){
     const tplId = row.dataset.templateId || "";

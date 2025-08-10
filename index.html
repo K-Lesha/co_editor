@@ -25,7 +25,7 @@
   .hdr{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid #252635;background:#12131a}
   .hdrL{display:flex;flex-direction:column;gap:4px}
   .hdr .pid{max-width:60vw}
-  .actions{display:flex;gap:8px;align-items:center}
+  .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   button{background:#1b1c22;border:1px solid #2a2b33;color:var(--text);border-radius:10px;padding:10px 12px;cursor:pointer}
   .primary{background:var(--accent);border-color:var(--accent);color:#0b0b0d;font-weight:700}
   .danger{border-color:#7b2e2e;background:#2a1414}
@@ -37,35 +37,20 @@
   .num{color:var(--muted);font-size:12px}
   .typeIn,.templSel{width:100%;padding:8px;border-radius:8px;border:1px solid #2a2b33;background:#101117;color:var(--text)}
   .textIn{width:100%;min-height:100px;resize:vertical;padding:10px;border-radius:10px;border:1px solid #2a2b33;background:#101117;color:var(--text);white-space:pre-wrap}
-.previewCard {
-  background: #fff; /* белый фон */
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  padding: 10px;
-  overflow: auto;
-  max-height: 160px;
-  color: #000; /* чёрный текст по умолчанию */
-  font-size: 13px; /* чуть мельче */
-  line-height: 1.4;
-}
-
-.previewCard .block {
-  font-size: 13px;
-  line-height: 1.4;
-  color: #000; /* чёрный текст внутри шаблонов */
-}
-
-.previewCard h2 {
-  font-size: 15px; /* заголовок поменьше */
-  margin: 0 0 6px;
-}
+  .previewCard {
+    background: #fff;
+    border: 1px solid #ccc;border-radius: 10px;padding: 10px;overflow: auto;max-height: 160px;
+    color: #000;font-size: 13px;line-height: 1.4;
+  }
+  .previewCard .block {font-size:13px;line-height:1.4;color:#000;}
+  .previewCard h2 {font-size:15px;margin:0 0 6px;}
   .delBtn{align-self:center}
-  .footer{padding:10px 14px;border-top:1px solid #252635;background:#12131a;display:flex;justify-content:space-between;align-items:center}
+  .footer{padding:10px 14px;border-top:1px solid #252635;background:#12131a;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
   .hint{color:var(--muted);font-size:13px}
   .pill{padding:4px 8px;border-radius:999px;border:1px solid #2a2b33;background:#1b1c22}
 
-  /* лёгкие базовые стили для мок-шаблонов */
-  .block{font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial}
+  /* мок-шаблоны */
+  .block{font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
   .block h2{margin:0 0 6px;font-size:18px}
   .block p{margin:0 0 6px}
   .block ul{margin:6px 0 0 18px;padding:0}
@@ -73,6 +58,8 @@
   .two-cols .cols{grid-template-columns:1fr 1fr}
   .three-cols .cols{grid-template-columns:1fr 1fr 1fr}
   .center-text{display:flex;align-items:center;justify-content:center;min-height:80px;text-align:center}
+  a.link{color:#9ec2ff;text-decoration:none;border-bottom:1px dashed #3a5ea8}
+  a.link:hover{border-bottom-style:solid}
 </style>
 </head>
 <body>
@@ -95,6 +82,8 @@
         <div class="actions">
           <button id="addBtn">+ Слайд</button>
           <button id="saveBtn" class="primary">Сохранить всё</button>
+          <!-- NEW: Publish -->
+          <button id="publishBtn" class="primary" title="Опубликовать изменения" style="display:none">Опубликовать изменения</button>
           <button id="closeBtn">Закрыть</button>
         </div>
       </div>
@@ -112,7 +101,8 @@
   // === CONFIG ===
   const ENDPOINT_LIST      = "https://kvlnk247-n8n.duckdns.org/webhook/slides-items";       // чтение слайдов
   const ENDPOINT_TEMPLATES = "https://kvlnk247-n8n.duckdns.org/webhook/slides-templates";   // чтение шаблонов
-  const ENDPOINT_SAVE      = "https://kvlnk247-n8n.duckdns.org/webhook/slides-sync";   // запись (replace)
+  const ENDPOINT_SAVE      = "https://kvlnk247-n8n.duckdns.org/webhook/slides-sync";        // запись (replace)
+  const ENDPOINT_PUBLISH   = "https://kvlnk247-n8n.duckdns.org/webhook/publish-project";    // публикация
 
   // === State ===
   let allItems = [];                 // сырые слайды
@@ -120,6 +110,7 @@
   let currentProjectId = null;       // открытый проект
   let templates = [];                // список шаблонов
   let templatesById = new Map();     // id -> template
+  let isDirty = false;               // есть несохранённые изменения?
 
   // DOM
   const elProjects = document.getElementById("projects");
@@ -131,6 +122,7 @@
   const closeBtn   = document.getElementById("closeBtn");
   const addBtn     = document.getElementById("addBtn");
   const saveBtn    = document.getElementById("saveBtn");
+  const publishBtn = document.getElementById("publishBtn");
   const statusEl   = document.getElementById("status");
 
   const bySlide = (a,b)=> (Number(a.slide)||0) - (Number(b.slide)||0);
@@ -154,8 +146,9 @@
       else closeEditor({push:false});
     });
 
-    addBtn.addEventListener("click", () => addSlideUI());
+    addBtn.addEventListener("click", () => { addSlideUI(); setDirty(true); });
     saveBtn.addEventListener("click", saveAll);
+    publishBtn.addEventListener("click", publishProject);
   }
 
   async function fetchAllSlides(){
@@ -216,6 +209,7 @@
     ovPidEl.textContent = projectId;
     statusEl.textContent = "";
     renderSlidesEditor();
+    setDirty(false); // открыли из БД — считаем «без правок»
     overlay.classList.add("show");
     overlay.setAttribute("aria-hidden","false");
     if(push){
@@ -246,55 +240,59 @@
   }
 
   function makeSlideRow(slide){
-  const row = document.createElement("div");
-  row.className = "slide";
-  row.setAttribute("draggable","true");
+    const row = document.createElement("div");
+    row.className = "slide";
+    row.setAttribute("draggable","true");
 
-  // нормализуем и сохраняем выбранный шаблон
-  row.dataset.templateId = slide.template_id ? String(slide.template_id) : "";
+    // нормализуем и сохраняем выбранный шаблон
+    row.dataset.templateId = slide.template_id ? String(slide.template_id) : "";
 
-  const selectHtml = `<select class="templSel">
-    <option value="">— выбрать шаблон —</option>
-    ${templates.map(t => `
-      <option value="${escapeAttr(String(t.id))}"${
-        String(t.id) === String(slide.template_id) ? ' selected' : ''
-      }>${escapeHtml(t.name || String(t.id))}</option>
-    `).join("")}
-  </select>`;
+    const selectHtml = `<select class="templSel">
+      <option value="">— выбрать шаблон —</option>
+      ${templates.map(t => `
+        <option value="${escapeAttr(String(t.id))}"${
+          String(t.id) === String(slide.template_id) ? ' selected' : ''
+        }>${escapeHtml(t.name || String(t.id))}</option>
+      `).join("")}
+    </select>`;
 
-  row.innerHTML = `
-    <div class="drag" title="Перетащить" aria-label="drag">≡</div>
-    <div>
-      <div class="num">Слайд</div>
-      <div class="num"><span class="numVal">${slide.slide}</span></div>
-      <div class="num" style="margin-top:8px">Тип</div>
-      <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
-      <div class="num" style="margin-top:8px">Шаблон</div>
-      ${selectHtml}
-    </div>
-    <div>
-      <div class="num">Текст</div>
-      <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
-    </div>
-    <div>
-      <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
-      <div class="previewCard"><div class="previewInner"></div></div>
-    </div>
-    <div class="delBtn">
-      <button class="danger">Удалить</button>
-    </div>
-  `;
+    row.innerHTML = `
+      <div class="drag" title="Перетащить" aria-label="drag">≡</div>
+      <div>
+        <div class="num">Слайд</div>
+        <div class="num"><span class="numVal">${slide.slide}</span></div>
+        <div class="num" style="margin-top:8px">Тип</div>
+        <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
+        <div class="num" style="margin-top:8px">Шаблон</div>
+        ${selectHtml}
+      </div>
+      <div>
+        <div class="num">Текст</div>
+        <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
+      </div>
+      <div>
+        <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
+        <div class="previewCard"><div class="previewInner"></div></div>
+      </div>
+      <div class="delBtn">
+        <button class="danger">Удалить</button>
+      </div>
+    `;
 
-  row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); });
-  const templSel = row.querySelector(".templSel");
-  templSel.addEventListener("change", () => {
-    row.dataset.templateId = templSel.value || "";
+    // События правок → dirty
+    row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); setDirty(true); });
+    const templSel = row.querySelector(".templSel");
+    templSel.addEventListener("change", () => {
+      row.dataset.templateId = templSel.value || "";
+      renderPreview(row);
+      setDirty(true);
+    });
+    row.querySelector(".typeIn").addEventListener("input", () => setDirty(true));
+    row.querySelector(".textIn").addEventListener("input", () => setDirty(true));
+
     renderPreview(row);
-  });
-
-  renderPreview(row);
-  return row;
-}
+    return row;
+  }
 
   function renderPreview(row){
     const tplId = row.dataset.templateId || "";
@@ -305,7 +303,6 @@
       return;
     }
     const tpl = templatesById.get(tplId);
-    // берём html_mock и подставляем мок‑текст
     const mockMap = {
       "{{headline}}":"Заголовок",
       "{{text}}":"Короткий абзац текста. Два-три предложения для примера.",
@@ -322,7 +319,6 @@
     for(const [k,v] of Object.entries(mockMap)){
       html = html.split(k).join(v);
     }
-    // безопасно вставляем как innerHTML маленький мок-блок
     try{
       holder.innerHTML = html;
     }catch(_){
@@ -338,6 +334,7 @@
     el.addEventListener("dragend", () => {
       el.classList.remove("dragging");
       renumberUI();
+      setDirty(true);
     });
     ovSlidesEl.addEventListener("dragover", e => {
       e.preventDefault();
@@ -369,7 +366,6 @@
     ovSlidesEl.appendChild(row);
     initDrag(row);
     renumberUI();
-    row.querySelector(".textIn").focus();
   }
 
   function buildSlidesPayload(){
@@ -399,16 +395,57 @@
       });
       if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       await res.json().catch(()=> ({}));
-      statusEl.textContent = "Готово ✔";
       // локально обновим
       grouped.set(currentProjectId, slides.map(s => ({...s, project_id: currentProjectId})));
       renderProjects();
+      setDirty(false);
+      statusEl.textContent = "Готово ✔";
     }catch(e){
       statusEl.textContent = "Ошибка: " + e.message;
     }
   }
 
-  // === utils ===
+  async function publishProject(){
+    if(!currentProjectId) return;
+    // защита: не публикуем, если есть несохранённые правки
+    if(isDirty){
+      statusEl.textContent = "Есть несохранённые изменения — сначала нажми «Сохранить всё».";
+      return;
+    }
+    publishBtn.disabled = true; publishBtn.textContent = "Публикация…";
+    statusEl.textContent = "Отправка на публикацию…";
+
+    try{
+      const res = await fetch(ENDPOINT_PUBLISH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: currentProjectId })
+      });
+      if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      await res.json().catch(()=> ({}));
+      const url = "https://k-lesha.github.io/proposals/" + encodeURIComponent(currentProjectId) + ".html";
+      statusEl.innerHTML = `Успешно отправлено. Проект будет опубликован через 1–2 минуты по ссылке: <a class="link" href="${url}" target="_blank" rel="noopener"> ${escapeHtml(url)} </a>`;
+    }catch(e){
+      statusEl.textContent = "Ошибка публикации: " + e.message;
+    }finally{
+      publishBtn.disabled = false; publishBtn.textContent = "Опубликовать изменения";
+    }
+  }
+
+  // === utils / dirty management ===
+  function setDirty(v=true){
+    isDirty = !!v;
+    updatePublishVisibility();
+    if(isDirty){
+      // показываем подсказку, что есть несохранённые правки
+      if(!statusEl.textContent) statusEl.textContent = "Есть несохранённые изменения.";
+    }
+  }
+  function updatePublishVisibility(){
+    if(!publishBtn) return;
+    publishBtn.style.display = isDirty ? "none" : "inline-block";
+  }
+
   function escapeHtml(s){
     return String(s ?? "")
       .replaceAll("&","&amp;").replaceAll("<","&lt;")

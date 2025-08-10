@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Все слайды</title>
+  <style>
+    body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
+    h1 { text-align: center; }
+    .slide { background: white; border-radius: 8px; padding: 15px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .meta { color: gray; font-size: 14px; margin-bottom: 5px; }
+    .text { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Все слайды</h1>
+  <div id="slides"></div>
+
+  <script>
+    const ENDPOINT = "https://kvlnk247-n8n.duckdns.org/webhook/slides-items";
+    const container = document.getElementById("slides");
+
+    async function loadSlides() {
+      try {
+        const res = await fetch(ENDPOINT);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : (data.data || data.items || []);
+
+        // сортируем по номеру слайда
+        items.sort((a, b) => (Number(a.slide) || 0) - (Number(b.slide) || 0));
+
+        // выводим
+        container.innerHTML = "";
+        items.forEach(item => {
+          const div = document.createElement("div");
+          div.className = "slide";
+          div.innerHTML = `
+            <div class="meta">Slide: ${item.slide} | Type: ${item.type} | Project: ${item.project_id}</div>
+            <div class="text">${item.text || "EMPTY"}</div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (err) {
+        container.innerHTML = `<p style="color:red">Ошибка загрузки: ${err.message}</p>`;
+      }
+    }
+
+    loadSlides();
+  </script>
+</body>
+</html>

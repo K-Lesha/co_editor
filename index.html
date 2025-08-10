@@ -17,6 +17,7 @@
   .pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70vw}
   .count{color:var(--muted);font-size:14px}
   .loading,.error{margin-top:14px;padding:16px;border:1px dashed #2a2b33;border-radius:12px}
+
   /* overlay sheet */
   .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none}
   .overlay.show{display:block}
@@ -30,22 +31,34 @@
   .danger{border-color:#7b2e2e;background:#2a1414}
   .body{flex:1;overflow:auto;padding:14px}
   .slides{display:grid;gap:10px}
-  .slide{background:#141418;border:1px solid #24252d;border-radius:12px;padding:12px;display:grid;grid-template-columns:36px 120px 1fr auto;gap:10px;align-items:start}
+  .slide{background:#141418;border:1px solid #24252d;border-radius:12px;padding:12px;display:grid;grid-template-columns:36px 180px 1fr 260px auto;gap:10px;align-items:start}
   .drag{cursor:grab;user-select:none;display:flex;align-items:center;justify-content:center;color:var(--muted)}
   .drag:active{cursor:grabbing}
   .num{color:var(--muted);font-size:12px}
-  .typeIn{width:100%;padding:8px;border-radius:8px;border:1px solid #2a2b33;background:#101117;color:var(--text)}
+  .typeIn,.templSel{width:100%;padding:8px;border-radius:8px;border:1px solid #2a2b33;background:#101117;color:var(--text)}
   .textIn{width:100%;min-height:100px;resize:vertical;padding:10px;border-radius:10px;border:1px solid #2a2b33;background:#101117;color:var(--text);white-space:pre-wrap}
+  .previewCard{background:#101117;border:1px solid #2a2b33;border-radius:10px;padding:10px;overflow:auto;max-height:160px}
+  .previewTitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;color:var(--muted);font-size:12px}
   .delBtn{align-self:center}
   .footer{padding:10px 14px;border-top:1px solid #252635;background:#12131a;display:flex;justify-content:space-between;align-items:center}
   .hint{color:var(--muted);font-size:13px}
   .pill{padding:4px 8px;border-radius:999px;border:1px solid #2a2b33;background:#1b1c22}
+
+  /* лёгкие базовые стили для мок-шаблонов */
+  .block{font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial}
+  .block h2{margin:0 0 6px;font-size:18px}
+  .block p{margin:0 0 6px}
+  .block ul{margin:6px 0 0 18px;padding:0}
+  .two-cols .cols,.three-cols .cols{display:grid;gap:8px}
+  .two-cols .cols{grid-template-columns:1fr 1fr}
+  .three-cols .cols{grid-template-columns:1fr 1fr 1fr}
+  .center-text{display:flex;align-items:center;justify-content:center;min-height:80px;text-align:center}
 </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Все слайды</h1>
-    <div class="muted">Клик по проекту — откроется редактор. Перетаскивай слайды за «≡». Кнопки: добавить, удалить, сохранить.</div>
+    <div class="muted">Клик по проекту — откроется редактор. Перетаскивай слайды за «≡». Выбирай шаблон, редактируй текст, сохраняй.</div>
     <div id="loading" class="loading">Загрузка…</div>
     <div id="error" class="error" style="display:none"></div>
     <div id="projects" class="projects"></div>
@@ -69,7 +82,7 @@
         <div id="ovSlides" class="slides"></div>
       </div>
       <div class="footer">
-        <div class="hint">Формат сохранения: <span class="pill">POST { project_id, replace: true, slides[] }</span></div>
+        <div class="hint">POST → <span class="pill">/webhook-test/slides-sync</span> c полями <span class="pill">template_id</span> в каждом слайде</div>
         <div id="status" class="muted"></div>
       </div>
     </div>
@@ -77,13 +90,17 @@
 
 <script>
   // === CONFIG ===
-  const ENDPOINT_LIST = "https://kvlnk247-n8n.duckdns.org/webhook/slides-items"; // чтение
-  const ENDPOINT_SAVE = "https://kvlnk247-n8n.duckdns.org/webhook/slides-sync";  // запись (замени на свою ноду)
+  const ENDPOINT_LIST      = "https://kvlnk247-n8n.duckdns.org/webhook/slides-items";       // чтение слайдов
+  const ENDPOINT_TEMPLATES = "https://kvlnk247-n8n.duckdns.org/webhook/slides-templates";   // чтение шаблонов
+  const ENDPOINT_SAVE      = "https://kvlnk247-n8n.duckdns.org/webhook-test/slides-sync";   // запись (replace)
 
   // === State ===
-  let allItems = [];
-  let grouped = new Map();          // project_id -> items[]
-  let currentProjectId = null;      // открытый в редакторе проект
+  let allItems = [];                 // сырые слайды
+  let grouped = new Map();           // project_id -> items[]
+  let currentProjectId = null;       // открытый проект
+  let templates = [];                // список шаблонов
+  let templatesById = new Map();     // id -> template
+
   // DOM
   const elProjects = document.getElementById("projects");
   const elLoading  = document.getElementById("loading");
@@ -102,14 +119,12 @@
   init();
 
   async function init(){
-    await fetchAll();
+    await Promise.all([fetchAllSlides(), fetchTemplates()]);
     renderProjects();
 
-    // deep link
     const deep = qs.get("project_id");
     if (deep && grouped.has(deep)) openEditor(deep);
 
-    // close handlers
     overlay.addEventListener("click", e => { if (e.target === overlay) closeEditor(); });
     closeBtn.addEventListener("click", closeEditor);
     window.addEventListener("keydown", e => { if (e.key === "Escape") closeEditor(); });
@@ -123,7 +138,7 @@
     saveBtn.addEventListener("click", saveAll);
   }
 
-  async function fetchAll(){
+  async function fetchAllSlides(){
     try{
       const res = await fetch(ENDPOINT_LIST);
       if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -141,6 +156,20 @@
       elLoading.style.display = "none";
       elError.style.display = "block";
       elError.textContent = "Ошибка загрузки: " + e.message;
+    }
+  }
+
+  async function fetchTemplates(){
+    try{
+      const res = await fetch(ENDPOINT_TEMPLATES, { method: "POST", headers: { "Content-Type": "application/json" } });
+      if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      const data = await res.json();
+      templates = Array.isArray(data) ? data : (data.data || data.items || []);
+      templatesById = new Map(templates.map(t => [t.id, t]));
+    }catch(e){
+      console.warn("Не удалось загрузить шаблоны:", e);
+      templates = [];
+      templatesById = new Map();
     }
   }
 
@@ -191,12 +220,8 @@
   function renderSlidesEditor(){
     ovSlidesEl.innerHTML = "";
     const slides = (grouped.get(currentProjectId) || []).map(s => ({...s}));
-    // гарантируем сквозную нумерацию
     slides.sort(bySlide).forEach((s,i)=> s.slide = i+1);
-
     slides.forEach((s) => ovSlidesEl.appendChild(makeSlideRow(s)));
-
-    // Drag & Drop (native)
     ovSlidesEl.querySelectorAll(".slide").forEach(initDrag);
   }
 
@@ -204,6 +229,12 @@
     const row = document.createElement("div");
     row.className = "slide";
     row.setAttribute("draggable","true");
+    row.dataset.templateId = slide.template_id || ""; // сохраняем выбранный шаблон
+
+    const selectHtml = `<select class="templSel">
+      <option value="">— выбрать шаблон —</option>
+      ${templates.map(t => `<option value="${escapeAttr(t.id)}"${t.id===slide.template_id?' selected':''}>${escapeHtml(t.name || t.id)}</option>`).join("")}
+    </select>`;
 
     row.innerHTML = `
       <div class="drag" title="Перетащить" aria-label="drag">≡</div>
@@ -212,23 +243,68 @@
         <div class="num"><span class="numVal">${slide.slide}</span></div>
         <div class="num" style="margin-top:8px">Тип</div>
         <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
+        <div class="num" style="margin-top:8px">Шаблон</div>
+        ${selectHtml}
       </div>
       <div>
         <div class="num">Текст</div>
         <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
+      </div>
+      <div>
+        <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
+        <div class="previewCard"><div class="previewInner"></div></div>
       </div>
       <div class="delBtn">
         <button class="danger">Удалить</button>
       </div>
     `;
 
-    // delete handler
-    row.querySelector(".danger").addEventListener("click", () => {
-      row.remove();
-      renumberUI();
+    // handlers
+    row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); });
+    const templSel = row.querySelector(".templSel");
+    templSel.addEventListener("change", () => {
+      row.dataset.templateId = templSel.value || "";
+      renderPreview(row);
     });
 
+    // первый рендер превью
+    renderPreview(row);
+
     return row;
+  }
+
+  function renderPreview(row){
+    const tplId = row.dataset.templateId || "";
+    const holder = row.querySelector(".previewInner");
+    holder.innerHTML = "";
+    if(!tplId || !templatesById.has(tplId)){
+      holder.innerHTML = `<div class="muted">Шаблон не выбран</div>`;
+      return;
+    }
+    const tpl = templatesById.get(tplId);
+    // берём html_mock и подставляем мок‑текст
+    const mockMap = {
+      "{{headline}}":"Заголовок",
+      "{{text}}":"Короткий абзац текста. Два-три предложения для примера.",
+      "{{col1}}":"Колонка 1 — мок‑текст",
+      "{{col2}}":"Колонка 2 — мок‑текст",
+      "{{col3}}":"Колонка 3 — мок‑текст",
+      "{{bullet1}}":"Пункт 1",
+      "{{bullet2}}":"Пункт 2",
+      "{{bullet3}}":"Пункт 3",
+      "{{quote}}":"«Вдохновляющая цитата»",
+      "{{author}}":"Имя Автора"
+    };
+    let html = String(tpl.html_mock || "").trim();
+    for(const [k,v] of Object.entries(mockMap)){
+      html = html.split(k).join(v);
+    }
+    // безопасно вставляем как innerHTML маленький мок-блок
+    try{
+      holder.innerHTML = html;
+    }catch(_){
+      holder.textContent = "Ошибка в html_mock";
+    }
   }
 
   function initDrag(el){
@@ -254,11 +330,8 @@
     return els.reduce((closest, child) => {
       const box = child.getBoundingClientRect();
       const offset = y - box.top - box.height/2;
-      if (offset < 0 && offset > closest.offset) {
-        return { offset, element: child };
-      } else {
-        return closest;
-      }
+      if (offset < 0 && offset > closest.offset) return { offset, element: child };
+      return closest;
     }, { offset: Number.NEGATIVE_INFINITY }).element;
   }
 
@@ -269,11 +342,10 @@
   }
 
   function addSlideUI(){
-    const row = makeSlideRow({ slide: (ovSlidesEl.children.length+1), type:"", text:"" });
+    const row = makeSlideRow({ slide: (ovSlidesEl.children.length+1), type:"", text:"", template_id: "" });
     ovSlidesEl.appendChild(row);
     initDrag(row);
     renumberUI();
-    // фокус в текст
     row.querySelector(".textIn").focus();
   }
 
@@ -282,7 +354,8 @@
     return rows.map((row, i) => {
       const type = row.querySelector(".typeIn").value.trim();
       const text = row.querySelector(".textIn").value;
-      return { slide: i+1, type, text };
+      const template_id = row.dataset.templateId || null;
+      return { slide: i+1, type, text, template_id };
     });
   }
 
@@ -297,18 +370,16 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           project_id: currentProjectId,
-          replace: true,            // просим ноду удалить старые и записать новые
+          replace: true,
           slides
         })
       });
       if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
-      const resp = await res.json().catch(()=> ({}));
+      await res.json().catch(()=> ({}));
       statusEl.textContent = "Готово ✔";
-      // локально перезапишем группу, чтобы список проектов показывал актуальное количество
+      // локально обновим
       grouped.set(currentProjectId, slides.map(s => ({...s, project_id: currentProjectId})));
       renderProjects();
-      // опционально: закрыть редактор
-      // closeEditor();
     }catch(e){
       statusEl.textContent = "Ошибка: " + e.message;
     }

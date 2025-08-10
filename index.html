@@ -82,7 +82,7 @@
         <div id="ovSlides" class="slides"></div>
       </div>
       <div class="footer">
-        <div class="hint">POST → <span class="pill">/webhook-test/slides-sync</span> c полями <span class="pill">template_id</span> в каждом слайде</div>
+        <div class="hint">POST → <span class="pill">/webhook/slides-sync</span> c полями <span class="pill">template_id</span> в каждом слайде</div>
         <div id="status" class="muted"></div>
       </div>
     </div>
@@ -92,7 +92,7 @@
   // === CONFIG ===
   const ENDPOINT_LIST      = "https://kvlnk247-n8n.duckdns.org/webhook/slides-items";       // чтение слайдов
   const ENDPOINT_TEMPLATES = "https://kvlnk247-n8n.duckdns.org/webhook/slides-templates";   // чтение шаблонов
-  const ENDPOINT_SAVE      = "https://kvlnk247-n8n.duckdns.org/webhook-test/slides-sync";   // запись (replace)
+  const ENDPOINT_SAVE      = "https://kvlnk247-n8n.duckdns.org/webhook/slides-sync";   // запись (replace)
 
   // === State ===
   let allItems = [];                 // сырые слайды
@@ -165,7 +165,7 @@
       if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
       const data = await res.json();
       templates = Array.isArray(data) ? data : (data.data || data.items || []);
-      templatesById = new Map(templates.map(t => [t.id, t]));
+      templatesById = new Map(templates.map(t => [String(t.id), t]));
     }catch(e){
       console.warn("Не удалось загрузить шаблоны:", e);
       templates = [];
@@ -226,52 +226,55 @@
   }
 
   function makeSlideRow(slide){
-    const row = document.createElement("div");
-    row.className = "slide";
-    row.setAttribute("draggable","true");
-    row.dataset.templateId = slide.template_id || ""; // сохраняем выбранный шаблон
+  const row = document.createElement("div");
+  row.className = "slide";
+  row.setAttribute("draggable","true");
 
-    const selectHtml = `<select class="templSel">
-      <option value="">— выбрать шаблон —</option>
-      ${templates.map(t => `<option value="${escapeAttr(t.id)}"${t.id===slide.template_id?' selected':''}>${escapeHtml(t.name || t.id)}</option>`).join("")}
-    </select>`;
+  // нормализуем и сохраняем выбранный шаблон
+  row.dataset.templateId = slide.template_id ? String(slide.template_id) : "";
 
-    row.innerHTML = `
-      <div class="drag" title="Перетащить" aria-label="drag">≡</div>
-      <div>
-        <div class="num">Слайд</div>
-        <div class="num"><span class="numVal">${slide.slide}</span></div>
-        <div class="num" style="margin-top:8px">Тип</div>
-        <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
-        <div class="num" style="margin-top:8px">Шаблон</div>
-        ${selectHtml}
-      </div>
-      <div>
-        <div class="num">Текст</div>
-        <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
-      </div>
-      <div>
-        <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
-        <div class="previewCard"><div class="previewInner"></div></div>
-      </div>
-      <div class="delBtn">
-        <button class="danger">Удалить</button>
-      </div>
-    `;
+  const selectHtml = `<select class="templSel">
+    <option value="">— выбрать шаблон —</option>
+    ${templates.map(t => `
+      <option value="${escapeAttr(String(t.id))}"${
+        String(t.id) === String(slide.template_id) ? ' selected' : ''
+      }>${escapeHtml(t.name || String(t.id))}</option>
+    `).join("")}
+  </select>`;
 
-    // handlers
-    row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); });
-    const templSel = row.querySelector(".templSel");
-    templSel.addEventListener("change", () => {
-      row.dataset.templateId = templSel.value || "";
-      renderPreview(row);
-    });
+  row.innerHTML = `
+    <div class="drag" title="Перетащить" aria-label="drag">≡</div>
+    <div>
+      <div class="num">Слайд</div>
+      <div class="num"><span class="numVal">${slide.slide}</span></div>
+      <div class="num" style="margin-top:8px">Тип</div>
+      <input class="typeIn" value="${escapeAttr(slide.type ?? '')}" placeholder="type (cover, context, ...)" />
+      <div class="num" style="margin-top:8px">Шаблон</div>
+      ${selectHtml}
+    </div>
+    <div>
+      <div class="num">Текст</div>
+      <textarea class="textIn" placeholder="текст слайда...">${escapeHtml(slide.text ?? "")}</textarea>
+    </div>
+    <div>
+      <div class="previewTitle"><span>Предпросмотр</span><span class="muted small"></span></div>
+      <div class="previewCard"><div class="previewInner"></div></div>
+    </div>
+    <div class="delBtn">
+      <button class="danger">Удалить</button>
+    </div>
+  `;
 
-    // первый рендер превью
+  row.querySelector(".danger").addEventListener("click", () => { row.remove(); renumberUI(); });
+  const templSel = row.querySelector(".templSel");
+  templSel.addEventListener("change", () => {
+    row.dataset.templateId = templSel.value || "";
     renderPreview(row);
+  });
 
-    return row;
-  }
+  renderPreview(row);
+  return row;
+}
 
   function renderPreview(row){
     const tplId = row.dataset.templateId || "";

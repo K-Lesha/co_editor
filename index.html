@@ -1,52 +1,179 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Все слайды</title>
+  <title>Все слайды по проектам</title>
   <style>
-    body { font-family: sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-    h1 { text-align: center; }
-    .slide { background: white; border-radius: 8px; padding: 15px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    .meta { color: gray; font-size: 14px; margin-bottom: 5px; }
-    .text { white-space: pre-wrap; }
+    :root{--bg:#0b0b0d;--card:#141418;--text:#eaeaf0;--muted:#9aa0a6;--accent:#6ea8fe}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial}
+    .wrap{max-width:960px;margin:0 auto;padding:24px}
+    h1{margin:0 0 10px}
+    .muted{color:var(--muted)}
+    .projects{display:grid;gap:10px;margin-top:14px}
+    .row{display:flex;justify-content:space-between;align-items:center;background:#141418;border:1px solid #24252d;border-radius:12px;padding:12px 14px;cursor:pointer}
+    .row:hover{border-color:#2f3240}
+    .pid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .count{color:var(--muted);font-size:14px}
+    .loading,.error{margin-top:14px;padding:16px;border:1px dashed #2a2b33;border-radius:12px}
+    /* overlay */
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none}
+    .overlay.show{display:block}
+    .sheet{position:absolute;inset:auto 0 0 0;background:#0f1014;border-top-left-radius:16px;border-top-right-radius:16px;max-height:85vh;overflow:auto;border:1px solid #2a2b33}
+    .sheet .hdr{position:sticky;top:0;background:#12131a;border-bottom:1px solid #252635;padding:14px}
+    .sheet .hdr .pid{font-size:14px}
+    .close{float:right;background:var(--accent);border:none;border-radius:10px;color:#0b0b0d;padding:8px 12px;font-weight:600;cursor:pointer}
+    .slides{padding:14px;display:grid;gap:10px}
+    .slide{background:#141418;border:1px solid #24252d;border-radius:12px;padding:12px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:6px}
+    .text{white-space:pre-wrap}
   </style>
 </head>
 <body>
-  <h1>Все слайды</h1>
-  <div id="slides"></div>
+  <div class="wrap">
+    <h1>Все слайды</h1>
+    <div class="muted">Группировка по <code>project_id</code>. Клик по строке откроет слайды проекта.</div>
+
+    <div id="loading" class="loading">Загрузка…</div>
+    <div id="error" class="error" style="display:none"></div>
+    <div id="projects" class="projects"></div>
+  </div>
+
+  <!-- Overlay -->
+  <div id="overlay" class="overlay" aria-hidden="true">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="hdr">
+        <button id="closeBtn" class="close">Закрыть</button>
+        <div class="muted">Проект</div>
+        <div id="ovPid" class="pid"></div>
+      </div>
+      <div id="ovSlides" class="slides"></div>
+    </div>
+  </div>
 
   <script>
     const ENDPOINT = "https://kvlnk247-n8n.duckdns.org/webhook/slides-items";
-    const container = document.getElementById("slides");
 
-    async function loadSlides() {
-      try {
+    const elProjects = document.getElementById("projects");
+    const elLoading  = document.getElementById("loading");
+    const elError    = document.getElementById("error");
+    const overlay    = document.getElementById("overlay");
+    const ovPidEl    = document.getElementById("ovPid");
+    const ovSlidesEl = document.getElementById("ovSlides");
+    const closeBtn   = document.getElementById("closeBtn");
+
+    let allItems = [];
+    let grouped = new Map(); // project_id -> items[]
+
+    // Helpers
+    const bySlide = (a,b)=> (Number(a.slide)||0) - (Number(b.slide)||0);
+    const qs = new URLSearchParams(location.search);
+
+    init();
+
+    async function init(){
+      await fetchAll();     // тянем всё
+      renderProjects();     // показываем список проектов
+
+      // если есть ?project_id=... — открыть оверлей
+      const deep = qs.get("project_id");
+      if (deep && grouped.has(deep)) openOverlay(deep);
+
+      // обработчики закрытия
+      overlay.addEventListener("click", e => { if (e.target === overlay) closeOverlay(); });
+      closeBtn.addEventListener("click", closeOverlay);
+      window.addEventListener("keydown", e => { if (e.key === "Escape") closeOverlay(); });
+      window.addEventListener("popstate", () => {
+        const pid = new URLSearchParams(location.search).get("project_id");
+        if (pid && grouped.has(pid)) openOverlay(pid, {push:false});
+        else closeOverlay({push:false});
+      });
+    }
+
+    async function fetchAll(){
+      try{
         const res = await fetch(ENDPOINT);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if(!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
         const data = await res.json();
-        const items = Array.isArray(data) ? data : (data.data || data.items || []);
-
-        // сортируем по номеру слайда
-        items.sort((a, b) => (Number(a.slide) || 0) - (Number(b.slide) || 0));
-
-        // выводим
-        container.innerHTML = "";
-        items.forEach(item => {
-          const div = document.createElement("div");
-          div.className = "slide";
-          div.innerHTML = `
-            <div class="meta">Slide: ${item.slide} | Type: ${item.type} | Project: ${item.project_id}</div>
-            <div class="text">${item.text || "EMPTY"}</div>
-          `;
-          container.appendChild(div);
-        });
-      } catch (err) {
-        container.innerHTML = `<p style="color:red">Ошибка загрузки: ${err.message}</p>`;
+        allItems = Array.isArray(data) ? data : (data.data || data.items || []);
+        // группируем
+        grouped = new Map();
+        for(const it of allItems){
+          const pid = it.project_id || "—";
+          if(!grouped.has(pid)) grouped.set(pid, []);
+          grouped.get(pid).push(it);
+        }
+        // сортируем внутри групп
+        for(const arr of grouped.values()) arr.sort(bySlide);
+        elLoading.style.display = "none";
+      }catch(err){
+        elLoading.style.display = "none";
+        elError.style.display = "block";
+        elError.textContent = "Ошибка загрузки: " + err.message;
       }
     }
 
-    loadSlides();
+    function renderProjects(){
+      elProjects.innerHTML = "";
+      // сортировка проектов по алфавиту
+      const entries = Array.from(grouped.entries()).sort((a,b)=> String(a[0]).localeCompare(String(b[0])));
+      for(const [pid, items] of entries){
+        const row = document.createElement("div");
+        row.className = "row";
+        row.innerHTML = `
+          <div>
+            <div class="muted">project_id</div>
+            <div class="pid">${escapeHtml(pid)}</div>
+          </div>
+          <div class="count">${items.length} слайдов</div>
+        `;
+        row.addEventListener("click", () => openOverlay(pid));
+        elProjects.appendChild(row);
+      }
+    }
+
+    function openOverlay(projectId, {push=true}={}){
+      // заполняем
+      ovPidEl.textContent = projectId;
+      ovSlidesEl.innerHTML = "";
+      const slides = grouped.get(projectId) || [];
+      for(const it of slides){
+        const card = document.createElement("div");
+        card.className = "slide";
+        card.innerHTML = `
+          <div class="meta">Slide: ${escapeHtml(it.slide ?? "—")} | Type: ${escapeHtml(it.type ?? "—")}</div>
+          <div class="text">${escapeHtml(it.text ?? "EMPTY")}</div>
+        `;
+        ovSlidesEl.appendChild(card);
+      }
+      overlay.classList.add("show");
+      overlay.setAttribute("aria-hidden","false");
+      if(push){
+        const p = new URLSearchParams(location.search);
+        p.set("project_id", projectId);
+        history.pushState({}, "", location.pathname + "?" + p.toString());
+      }
+    }
+
+    function closeOverlay({push=true}={}){
+      if(!overlay.classList.contains("show")) return;
+      overlay.classList.remove("show");
+      overlay.setAttribute("aria-hidden","true");
+      if(push){
+        const p = new URLSearchParams(location.search);
+        p.delete("project_id");
+        history.pushState({}, "", location.pathname + (p.toString()?("?"+p.toString()):""));
+      }
+    }
+
+    function escapeHtml(s){
+      return String(s ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;");
+    }
   </script>
 </body>
 </html>

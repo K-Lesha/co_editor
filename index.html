@@ -37,8 +37,28 @@
   .num{color:var(--muted);font-size:12px}
   .typeIn,.templSel{width:100%;padding:8px;border-radius:8px;border:1px solid #2a2b33;background:#101117;color:var(--text)}
   .textIn{width:100%;min-height:100px;resize:vertical;padding:10px;border-radius:10px;border:1px solid #2a2b33;background:#101117;color:var(--text);white-space:pre-wrap}
-  .previewCard{background:#101117;border:1px solid #2a2b33;border-radius:10px;padding:10px;overflow:auto;max-height:160px}
-  .previewTitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;color:var(--muted);font-size:12px}
+.previewCard {
+  background: #fff; /* белый фон */
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  padding: 10px;
+  overflow: auto;
+  max-height: 160px;
+  color: #000; /* чёрный текст по умолчанию */
+  font-size: 13px; /* чуть мельче */
+  line-height: 1.4;
+}
+
+.previewCard .block {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #000; /* чёрный текст внутри шаблонов */
+}
+
+.previewCard h2 {
+  font-size: 15px; /* заголовок поменьше */
+  margin: 0 0 6px;
+}
   .delBtn{align-self:center}
   .footer{padding:10px 14px;border-top:1px solid #252635;background:#12131a;display:flex;justify-content:space-between;align-items:center}
   .hint{color:var(--muted);font-size:13px}

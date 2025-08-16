@@ -97,6 +97,11 @@
   <button id="newProjectBtn" class="primary">+ Новый проект</button>
 </div>
 
+<div id="loading" class="loading">Загрузка…</div>
+<div id="error" class="error" style="display:none"></div>
+
+<div id="projects" class="projects"></div>
+  
   <!-- Overlay Editor -->
   <div id="overlay" class="overlay" aria-hidden="true">
     <div class="sheet" role="dialog" aria-modal="true">
@@ -563,8 +568,8 @@
   }
 </script>
 
-  // === NEW PROJECT ADD ===
-
+<!-- NEW PROJECT ADD -->
+  
   <script>
 const ENDPOINT_CREATE_PROJECT = "https://kvlnk247-n8n.duckdns.org/webhook/post-new-co";
 
@@ -586,8 +591,6 @@ const formStatus = document.getElementById("formStatus");
 const progress = document.getElementById("progress");
 const progressFill = document.getElementById("progressFill");
 
-// === ДОБАВИТЬ В ФУНКЦИЮ init() ПОСЛЕ СУЩЕСТВУЮЩИХ ОБРАБОТЧИКОВ ===
-// New project modal handlers
 newProjectBtn.addEventListener("click", openNewProjectModal);
 closeNewProjectBtn.addEventListener("click", closeNewProjectModal);
 newProjectOverlay.addEventListener("click", e => { if (e.target === newProjectOverlay) closeNewProjectModal(); });
@@ -814,11 +817,7 @@ function showProgress(show) {
 
 function showFormMessage(message, type) {
   formStatus.innerHTML = `<div class="status-message status-${type}">${escapeHtml(message)}</div>`;
-  setTimeout(() => {
-    if (formStatus.textContent === message) {
-      formStatus.innerHTML = '';
-    }
-  }, type === 'success' ? 8000 : 5000);
+  setTimeout(() => { formStatus.innerHTML = ''; }, type === 'success' ? 8000 : 5000);
 }
 </script>
 </body>
